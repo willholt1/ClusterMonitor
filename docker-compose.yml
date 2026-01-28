@@ -1,0 +1,9 @@
+services:
+  web:
+    image: node:20-alpine
+    working_dir: /work/app
+    ports:
+      - "5173:5173"
+    volumes:
+      - ./:/work
+    command: sh -lc "npm install && npm run dev -- --host 0.0.0.0"
