@@ -1,10 +1,11 @@
 import { useEffect, useState } from "react";
-import { getNodeInfo, getCPUInfo, getMemInfo } from "./prometheus";
+import { getNodeInfo, getCPUInfo, getMemInfo, getDiskInfo} from "./prometheus";
 
 type NodeRow = {
     node: string;
     cpuPct?: number;
     memPct?: number;
+    diskPct?: number;
 };
 
 function toNumber(s: string) {
@@ -33,6 +34,8 @@ export default function Nodes() {
                 // Mem% with nodename label
                 const memResp = await getMemInfo();
 
+                const diskResp = await getDiskInfo();
+
                 // Build maps keyed by host name
                 const cpuByNode = new Map<string, number>();
                 for (const r of cpuResp.data.result) {
@@ -48,11 +51,19 @@ export default function Nodes() {
                     if (name && v !== undefined) memByNode.set(name, v);
                 }
 
+                const diskByNode = new Map<string, number>();
+                for (const r of diskResp.data.result) {
+                    const name = r.metric.nodename;
+                    const v = toNumber(r.value[1]);
+                    if (name && v !== undefined) diskByNode.set(name, v);
+                }
+
                 // Merge into rows
                 const nextRows: NodeRow[] = nodeNames.map((node) => ({
                     node,
                     cpuPct: cpuByNode.get(node),
                     memPct: memByNode.get(node),
+                    diskPct: diskByNode.get(node),
                 }));
 
                 setRows(nextRows);
@@ -73,6 +84,7 @@ export default function Nodes() {
                         <th align="left">Node</th>
                         <th align="left">CPU %</th>
                         <th align="left">Mem %</th>
+                        <th align="left">Disk %</th>
                     </tr>
                 </thead>
                 <tbody>
@@ -81,6 +93,7 @@ export default function Nodes() {
                             <td>{r.node}</td>
                             <td>{r.cpuPct !== undefined ? r.cpuPct.toFixed(1) : "-"}</td>
                             <td>{r.memPct !== undefined ? r.memPct.toFixed(1) : "-"}</td>
+                            <td>{r.diskPct !== undefined ? r.diskPct.toFixed(1) : "-"}</td>
                         </tr>
                     ))}
                 </tbody>

@@ -43,3 +43,22 @@ export async function getMemInfo(): Promise<PromQueryResponse> {
     if (!res.ok) throw new Error(`Prometheus query failed: ${res.status}`);
     return res.json();
 }
+
+export async function getDiskInfo(): Promise<PromQueryResponse> {
+    const query: string = `
+                            (
+                              100 - (
+                                (node_filesystem_avail_bytes{fstype!~"tmpfs|overlay|squashfs|fuse.lxcfs|ramfs", mountpoint="/"}
+                                / node_filesystem_size_bytes{fstype!~"tmpfs|overlay|squashfs|fuse.lxcfs|ramfs", mountpoint="/"})
+                                * 100
+                              )
+                            )
+                            * on(instance) group_left(nodename)
+                            node_uname_info
+                        `.trim();
+
+    const url = `/prom/api/v1/query?query=${encodeURIComponent(query)}`;
+    const res = await fetch(url);
+    if (!res.ok) throw new Error(`Prometheus query failed: ${res.status}`);
+    return res.json();
+}
