@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { promQuery } from "./prometheus";
+import { getNodeInfo, getCPUInfo, getMemInfo } from "./prometheus";
 
 type NodeRow = {
     node: string;
@@ -22,29 +22,16 @@ export default function Nodes() {
                 setError(null);
 
                 // Node list from kube-state-metrics (Kubernetes truth)
-                const nodesResp = await promQuery(`kube_node_info`);
+                const nodesResp = await getNodeInfo();
                 const nodeNames = Array.from(
                     new Set(nodesResp.data.result.map((r) => r.metric.node).filter(Boolean))
                 ).sort();
 
                 // CPU% with nodename label (joined via node_uname_info)
-                const cpuResp = await promQuery(`
-          (
-            100 - (avg by (instance) (rate(node_cpu_seconds_total{mode="idle"}[5m])) * 100)
-          )
-          * on(instance) group_left(nodename)
-          node_uname_info
-        `.trim());
+                const cpuResp = await getCPUInfo();
 
                 // Mem% with nodename label
-                const memResp = await promQuery(`
-          (
-            (node_memory_MemTotal_bytes - node_memory_MemAvailable_bytes)
-            / node_memory_MemTotal_bytes * 100
-          )
-          * on(instance) group_left(nodename)
-          node_uname_info
-        `.trim());
+                const memResp = await getMemInfo();
 
                 // Build maps keyed by host name
                 const cpuByNode = new Map<string, number>();
