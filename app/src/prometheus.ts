@@ -9,23 +9,28 @@ export type PromQueryResponse = {
     };
 };
 
+export type PromRangeResponse = {
+    status: "success" | "error";
+    data: {
+        resultType: "matrix";
+        result: Array<{
+            metric: Record<string, string>;
+            values: Array<[number, string]>; // [timestampSeconds, valueString]
+        }>;
+    };
+};
+
 export async function getNodeInfo(): Promise<PromQueryResponse> {
     const query: string = "kube_node_info";
 
-    const url = `/prom/api/v1/query?query=${encodeURIComponent(query)}`;
-    const res = await fetch(url);
-    if (!res.ok) throw new Error(`Prometheus query failed: ${res.status}`);
-    return res.json();
+    return queryPrometheus(query);
 }
 
 export async function getCPUInfo(): Promise<PromQueryResponse> {
     const query: string = `(100 - (avg by (instance) (rate(node_cpu_seconds_total{mode="idle"}[5m])) * 100))
                          * on(instance) group_left(nodename) node_uname_info`.trim();
 
-    const url = `/prom/api/v1/query?query=${encodeURIComponent(query)}`;
-    const res = await fetch(url);
-    if (!res.ok) throw new Error(`Prometheus query failed: ${res.status}`);
-    return res.json();
+    return queryPrometheus(query);
 }
 
 export async function getMemInfo(): Promise<PromQueryResponse> {
@@ -38,10 +43,7 @@ export async function getMemInfo(): Promise<PromQueryResponse> {
                           node_uname_info
                         `.trim();
 
-    const url = `/prom/api/v1/query?query=${encodeURIComponent(query)}`;
-    const res = await fetch(url);
-    if (!res.ok) throw new Error(`Prometheus query failed: ${res.status}`);
-    return res.json();
+    return queryPrometheus(query);
 }
 
 export async function getDiskInfo(): Promise<PromQueryResponse> {
@@ -57,8 +59,31 @@ export async function getDiskInfo(): Promise<PromQueryResponse> {
                             node_uname_info
                         `.trim();
 
+    return queryPrometheus(query);
+}
+
+async function queryPrometheus<T = PromQueryResponse>(query: string): Promise<T> {
     const url = `/prom/api/v1/query?query=${encodeURIComponent(query)}`;
     const res = await fetch(url);
     if (!res.ok) throw new Error(`Prometheus query failed: ${res.status}`);
+    return res.json();
+}
+
+
+export async function queryPrometheusRange(
+    query: string,
+    start: Date,
+    end: Date,
+    stepSeconds: number
+): Promise<PromRangeResponse> {
+    const params = new URLSearchParams({
+        query,
+        start: (start.getTime() / 1000).toString(),
+        end: (end.getTime() / 1000).toString(),
+        step: stepSeconds.toString(),
+    });
+
+    const res = await fetch(`/prom/api/v1/query_range?${params.toString()}`);
+    if (!res.ok) throw new Error(`Prometheus range query failed: ${res.status}`);
     return res.json();
 }
