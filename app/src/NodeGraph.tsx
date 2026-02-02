@@ -1,64 +1,20 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from "recharts";
-import { queryPrometheusRange } from "./prometheus";
-
-type MetricKind = "cpu" | "mem" | "disk";
-
-function metricQuery(kind: MetricKind, nodename: string) {
-    // All are "instant-like" expressions; range query will evaluate them over time.
-    if (kind === "cpu") {
-        return `
-      (
-        100 - (avg by (instance) (rate(node_cpu_seconds_total{mode="idle"}[5m])) * 100)
-      )
-      * on(instance) group_left(nodename)
-      node_uname_info{nodename="${nodename}"}
-    `.trim();
-    }
-
-    if (kind === "mem") {
-        return `
-      (
-        (node_memory_MemTotal_bytes - node_memory_MemAvailable_bytes)
-        / node_memory_MemTotal_bytes * 100
-      )
-      * on(instance) group_left(nodename)
-      node_uname_info{nodename="${nodename}"}
-    `.trim();
-    }
-
-    // disk root usage %
-    return `
-    (
-      100 - (
-        (node_filesystem_avail_bytes{fstype!~"tmpfs|overlay|squashfs|fuse.lxcfs|ramfs", mountpoint="/"}
-        / node_filesystem_size_bytes{fstype!~"tmpfs|overlay|squashfs|fuse.lxcfs|ramfs", mountpoint="/"})
-        * 100
-      )
-    )
-    * on(instance) group_left(nodename)
-    node_uname_info{nodename="${nodename}"}
-  `.trim();
-}
+import { getCPUInfoRange, getMemInfoRange, getDiskInfoRange } from "./prometheus";
 
 function toNumber(s: string) {
     const n = Number(s);
     return Number.isFinite(n) ? n : null;
 }
 
-export default function NodeGraph(props: { nodename: string }) {
-    const { nodename } = props;
+type ComponentType = "cpu" | "memory" | "disk";
 
-    const [kind, setKind] = useState<MetricKind>("cpu");
+export default function CPUGraph(props: { nodename: string; component: ComponentType }) {
+    const { nodename, component } = props;
+
     const [hours, setHours] = useState(1);
     const [data, setData] = useState<Array<{ t: number; v: number }>>([]);
     const [error, setError] = useState<string | null>(null);
-
-    const title = useMemo(() => {
-        if (kind === "cpu") return "CPU %";
-        if (kind === "mem") return "Memory %";
-        return "Disk % (/) ";
-    }, [kind]);
 
     useEffect(() => {
         (async () => {
@@ -67,12 +23,16 @@ export default function NodeGraph(props: { nodename: string }) {
 
                 const end = new Date();
                 const start = new Date(end.getTime() - hours * 60 * 60 * 1000);
-
-                // choose step: ~240 points max
                 const stepSeconds = Math.max(15, Math.floor((hours * 3600) / 240));
 
-                const q = metricQuery(kind, nodename);
-                const resp = await queryPrometheusRange(q, start, end, stepSeconds);
+                let resp;
+                if (component === "cpu") {
+                    resp = await getCPUInfoRange(nodename, start, end, stepSeconds);
+                } else if (component === "memory") {
+                    resp = await getMemInfoRange(nodename, start, end, stepSeconds);
+                } else {
+                    resp = await getDiskInfoRange(nodename, start, end, stepSeconds);
+                }
 
                 const series = resp.data.result[0];
                 if (!series) {
@@ -92,21 +52,15 @@ export default function NodeGraph(props: { nodename: string }) {
                 setError(e?.message ?? String(e));
             }
         })();
-    }, [kind, hours, nodename]);
+    }, [hours, nodename]);
+
+    const graphLabel = component === "cpu" ? "CPU" : component === "memory" ? "Memory" : "Disk";
 
     return (
         <div style={{ padding: 16 }}>
-            <h2 style={{ marginBottom: 8 }}>{nodename} — {title}</h2>
+            <h2 style={{ marginBottom: 8 }}>{nodename} — {graphLabel}</h2>
 
             <div style={{ display: "flex", gap: 12, alignItems: "center", marginBottom: 12 }}>
-                <label>
-                    Metric{" "}
-                    <select value={kind} onChange={(e) => setKind(e.target.value as MetricKind)}>
-                        <option value="cpu">CPU %</option>
-                        <option value="mem">Memory %</option>
-                        <option value="disk">Disk %</option>
-                    </select>
-                </label>
 
                 <label>
                     Range{" "}
@@ -133,7 +87,7 @@ export default function NodeGraph(props: { nodename: string }) {
                         <YAxis domain={[0, 100]} />
                         <Tooltip
                             labelFormatter={(ms) => new Date(ms as number).toLocaleString()}
-                            formatter={(value) => [(value as number).toFixed(1), title]}
+                            formatter={(value) => [(value as number).toFixed(1), graphLabel]}
                         />
                         <Line dataKey="v" dot={false} />
                     </LineChart>

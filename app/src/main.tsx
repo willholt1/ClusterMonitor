@@ -9,7 +9,9 @@ import NodeGraph from "./NodeGraph";
 createRoot(document.getElementById('root')!).render(
     <StrictMode>
         <Nodes />
-        <NodeGraph nodename="whsrv" />
+        <NodeGraph nodename="whsrv" component="cpu" />
+        <NodeGraph nodename="whsrv" component="memory" />
+        <NodeGraph nodename="whsrv" component="disk" />
     </StrictMode>,
 
 )

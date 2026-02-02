@@ -69,6 +69,61 @@ async function queryPrometheus<T = PromQueryResponse>(query: string): Promise<T>
     return res.json();
 }
 
+export async function getCPUInfoRange(
+    nodename: string,
+    start: Date,
+    end: Date,
+    stepSeconds: number
+): Promise<PromRangeResponse> {
+    const query: string = `
+      (
+        100 - (avg by (instance) (rate(node_cpu_seconds_total{mode="idle"}[5m])) * 100)
+      )
+      * on(instance) group_left(nodename)
+      node_uname_info{nodename="${nodename}"}
+    `.trim();
+
+    return queryPrometheusRange(query, start, end, stepSeconds);
+}
+
+export async function getMemInfoRange(
+    nodename: string,
+    start: Date,
+    end: Date,
+    stepSeconds: number
+): Promise<PromRangeResponse> {
+    const query: string = `
+      (
+        (node_memory_MemTotal_bytes - node_memory_MemAvailable_bytes)
+        / node_memory_MemTotal_bytes * 100
+      )
+      * on(instance) group_left(nodename)
+      node_uname_info{nodename="${nodename}"}
+    `.trim();
+
+    return queryPrometheusRange(query, start, end, stepSeconds);
+}
+
+export async function getDiskInfoRange(
+    nodename: string,
+    start: Date,
+    end: Date,
+    stepSeconds: number
+): Promise<PromRangeResponse> {
+    const query: string = `
+    (
+      100 - (
+        (node_filesystem_avail_bytes{fstype!~"tmpfs|overlay|squashfs|fuse.lxcfs|ramfs", mountpoint="/"}
+        / node_filesystem_size_bytes{fstype!~"tmpfs|overlay|squashfs|fuse.lxcfs|ramfs", mountpoint="/"})
+        * 100
+      )
+    )
+    * on(instance) group_left(nodename)
+    node_uname_info{nodename="${nodename}"}
+  `.trim();
+
+    return queryPrometheusRange(query, start, end, stepSeconds);
+}
 
 export async function queryPrometheusRange(
     query: string,
