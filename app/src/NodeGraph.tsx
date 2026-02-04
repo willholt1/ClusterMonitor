@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
-import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from "recharts";
-import { getCPUInfoRange, getMemInfoRange, getDiskInfoRange } from "./prometheus";
+import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, Legend } from "recharts";
+import { getCPUInfoRange, getMemInfoRange, getDiskInfoRange, getNodeInfo } from "./prometheus";
 
 function toNumber(s: string) {
     const n = Number(s);
@@ -9,11 +9,15 @@ function toNumber(s: string) {
 
 type ComponentType = "cpu" | "memory" | "disk";
 
-export default function CPUGraph(props: { nodename: string; component: ComponentType }) {
-    const { nodename, component } = props;
+// Generate a consistent color for each node
+const colors = ["#8884d8", "#82ca9d", "#ffc658", "#ff7c7c", "#8dd1e1", "#d084d0", "#a4de6c"];
 
+export default function PerformanceGraph(props: { component: ComponentType }) {
+    const { component } = props;
+
+    const [nodenames, setNodenames] = useState<string[]>([]);
     const [hours, setHours] = useState(1);
-    const [data, setData] = useState<Array<{ t: number; v: number }>>([]);
+    const [data, setData] = useState<Array<{ t: number;[key: string]: number }>>([]);
     const [error, setError] = useState<string | null>(null);
 
     useEffect(() => {
@@ -21,47 +25,72 @@ export default function CPUGraph(props: { nodename: string; component: Component
             try {
                 setError(null);
 
+                const nodesResp = await getNodeInfo();
+                const nodes = Array.from(
+                    new Set(nodesResp.data.result.map((r) => r.metric.node).filter(Boolean))
+                ).sort();
+
+                setNodenames(nodes);
+
                 const end = new Date();
                 const start = new Date(end.getTime() - hours * 60 * 60 * 1000);
                 const stepSeconds = Math.max(15, Math.floor((hours * 3600) / 240));
 
-                let resp;
-                if (component === "cpu") {
-                    resp = await getCPUInfoRange(nodename, start, end, stepSeconds);
-                } else if (component === "memory") {
-                    resp = await getMemInfoRange(nodename, start, end, stepSeconds);
-                } else {
-                    resp = await getDiskInfoRange(nodename, start, end, stepSeconds);
-                }
+                // Fetch data for all nodes in parallel
+                const promises = nodes.map(async (nodename) => {
+                    let resp;
+                    if (component === "cpu") {
+                        resp = await getCPUInfoRange(nodename, start, end, stepSeconds);
+                    } else if (component === "memory") {
+                        resp = await getMemInfoRange(nodename, start, end, stepSeconds);
+                    } else {
+                        resp = await getDiskInfoRange(nodename, start, end, stepSeconds);
+                    }
 
-                const series = resp.data.result[0];
-                if (!series) {
-                    setData([]);
-                    return;
-                }
+                    const series = resp.data.result[0];
+                    if (!series) return { nodename, points: [] };
 
-                const points = series.values
-                    .map(([ts, vs]) => {
-                        const v = toNumber(vs);
-                        return v === null ? null : { t: ts * 1000, v };
-                    })
-                    .filter((p): p is { t: number; v: number } => p !== null);
+                    const points = series.values
+                        .map(([ts, vs]) => {
+                            const v = toNumber(vs);
+                            return v === null ? null : { t: ts * 1000, v };
+                        })
+                        .filter((p): p is { t: number; v: number } => p !== null);
 
-                setData(points);
+                    return { nodename, points };
+                });
+
+                const results = await Promise.all(promises);
+
+                // Merge all node data by timestamp
+                const timeMap = new Map<number, { t: number;[key: string]: number }>();
+
+                results.forEach(({ nodename, points }) => {
+                    points.forEach(({ t, v }) => {
+                        if (!timeMap.has(t)) {
+                            timeMap.set(t, { t });
+                        }
+                        timeMap.get(t)![nodename] = v;
+                    });
+                });
+
+                const merged = Array.from(timeMap.values()).sort((a, b) => a.t - b.t);
+                setData(merged);
             } catch (e: any) {
                 setError(e?.message ?? String(e));
             }
         })();
-    }, [hours, nodename]);
+    }, [hours, component]);
 
     const graphLabel = component === "cpu" ? "CPU" : component === "memory" ? "Memory" : "Disk";
 
     return (
-        <div style={{ padding: 16 }}>
-            <h2 style={{ marginBottom: 8 }}>{nodename} — {graphLabel}</h2>
+        <div style={{ padding: 16, width: "80vw"}}>
+            <h2 style={{ marginBottom: 8 }}>
+                {nodenames.length === 1 ? nodenames[0] : `${nodenames.length} Nodes`} — {graphLabel}
+            </h2>
 
             <div style={{ display: "flex", gap: 12, alignItems: "center", marginBottom: 12 }}>
-
                 <label>
                     Range{" "}
                     <select value={hours} onChange={(e) => setHours(Number(e.target.value))}>
@@ -89,7 +118,16 @@ export default function CPUGraph(props: { nodename: string; component: Component
                             labelFormatter={(ms) => new Date(ms as number).toLocaleString()}
                             formatter={(value) => [(value as number).toFixed(1), graphLabel]}
                         />
-                        <Line dataKey="v" dot={false} />
+                        <Legend />
+                        {nodenames.map((nodename, i) => (
+                            <Line
+                                key={nodename}
+                                dataKey={nodename}
+                                stroke={colors[i % colors.length]}
+                                dot={false}
+                                connectNulls
+                            />
+                        ))}
                     </LineChart>
                 </ResponsiveContainer>
             </div>
