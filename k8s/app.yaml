@@ -1,48 +1,96 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: clustermonitor
+---
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: clustermonitor
+  name: clustermonitor-ui
   namespace: clustermonitor
 spec:
   replicas: 1
   selector:
     matchLabels:
-      app: clustermonitor
+      app: clustermonitor-ui
   template:
     metadata:
       labels:
-        app: clustermonitor
+        app: clustermonitor-ui
     spec:
       containers:
-        - name: clustermonitor
-          image: ghcr.io/willholt1/clustermonitor:1.0.0
+        - name: ui
+          image: ghcr.io/willholt1/clustermonitor:1.0.1
           ports:
             - containerPort: 80
           readinessProbe:
-            httpGet:
-              path: /
-              port: 80
+            httpGet: { path: "/", port: 80 }
             initialDelaySeconds: 3
             periodSeconds: 10
           livenessProbe:
-            httpGet:
-              path: /
-              port: 80
+            httpGet: { path: "/", port: 80 }
             initialDelaySeconds: 10
             periodSeconds: 20
 ---
 apiVersion: v1
 kind: Service
 metadata:
-  name: clustermonitor
+  name: clustermonitor-ui
   namespace: clustermonitor
 spec:
   selector:
-    app: clustermonitor
+    app: clustermonitor-ui
   ports:
     - name: http
       port: 80
       targetPort: 80
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: clustermonitor-api
+  namespace: clustermonitor
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: clustermonitor-api
+  template:
+    metadata:
+      labels:
+        app: clustermonitor-api
+    spec:
+      containers:
+        - name: api
+          image: ghcr.io/willholt1/clustermonitor-api:1.0.0
+          env:
+            - name: PORT
+              value: "3000"
+            - name: PROM_URL
+              value: "http://kps-kube-prometheus-stack-prometheus.monitoring.svc:9090"
+          ports:
+            - containerPort: 3000
+          readinessProbe:
+            httpGet: { path: "/readyz", port: 3000 }
+            initialDelaySeconds: 2
+            periodSeconds: 10
+          livenessProbe:
+            httpGet: { path: "/healthz", port: 3000 }
+            initialDelaySeconds: 5
+            periodSeconds: 20
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: clustermonitor-api
+  namespace: clustermonitor
+spec:
+  selector:
+    app: clustermonitor-api
+  ports:
+    - name: http
+      port: 80
+      targetPort: 3000
 ---
 apiVersion: networking.k8s.io/v1
 kind: Ingress
@@ -54,10 +102,17 @@ spec:
     - host: clustermonitor.local
       http:
         paths:
+          - path: /api
+            pathType: Prefix
+            backend:
+              service:
+                name: clustermonitor-api
+                port:
+                  number: 80
           - path: /
             pathType: Prefix
             backend:
               service:
-                name: clustermonitor
+                name: clustermonitor-ui
                 port:
                   number: 80
