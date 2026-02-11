@@ -63,8 +63,8 @@ export async function getDiskInfo(): Promise<PromQueryResponse> {
 }
 
 async function queryPrometheus<T = PromQueryResponse>(query: string): Promise<T> {
-    const url = `/prom/api/v1/query?query=${encodeURIComponent(query)}`;
-    const res = await fetch(url);
+    const res = await fetch(`/api/prom/query?query=${encodeURIComponent(query)}`);
+
     if (!res.ok) throw new Error(`Prometheus query failed: ${res.status}`);
     return res.json();
 }
@@ -138,7 +138,7 @@ export async function queryPrometheusRange(
         step: stepSeconds.toString(),
     });
 
-    const res = await fetch(`/prom/api/v1/query_range?${params.toString()}`);
+    const res = await fetch(`/api/prom/query_range?${params.toString()}`);
     if (!res.ok) throw new Error(`Prometheus range query failed: ${res.status}`);
     return res.json();
 }

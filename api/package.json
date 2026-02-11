@@ -1,0 +1,14 @@
+{
+  "name": "clustermonitor-api",
+  "private": true,
+  "type": "module",
+  "main": "dist/server.js",
+  "scripts": {
+    "dev": "node --watch src/server.js",
+    "start": "node dist/server.js",
+    "build": "mkdir -p dist && cp src/server.js dist/server.js"
+  },
+  "dependencies": {
+    "express": "^4.19.2"
+  }
+}
